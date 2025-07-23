@@ -2,6 +2,8 @@
 
 Demonstrates the technical impact of integrating Redis Enterprise with AWS Bedrock Agents through a side-by-side architecture comparison. This implementation measures performance improvements from semantic caching, conversation memory, and intelligent query routing.
 
+![Redis-Enhanced AWS Architecture](redis-aws-architecture-diagram.png)
+
 ## Prerequisites
 
 - Python 3.8+
@@ -11,14 +13,14 @@ Demonstrates the technical impact of integrating Redis Enterprise with AWS Bedro
 ## Installation
 
 ```bash
-git clone <repo-url>
-cd aws-redis-fin-agent
+git clone https://github.com/Redislabs-Solution-Architects/redis-aws-investment-analyst.git
+cd redis-aws-investment-analyst
 pip install -r requirements.txt
 ```
 
 ## Setup
 
-### Step 1: AWS Foundation Setup
+### Step 1: AWS Foundation Setup◊
 Deploy the baseline AWS architecture using the official sample repository:
 
 [AWS Bedrock Investment Research Sample](https://github.com/aws-samples/amazon-bedrock-samples/tree/main/agents-and-function-calling/bedrock-agents/use-case-examples/ai-powered-assistant-for-investment-research)
@@ -80,8 +82,6 @@ export REDIS_CLIENT_KEY="./certs/client-key.pem"
 
 Access `http://localhost:8000` to interact with both architectures simultaneously and compare performance metrics.
 
-## Architecture
-
 **Enhanced (Redis + AWS)**
 ```
 Query → Semantic Router → Cache/Memory → Bedrock Agent → Redis VectorDB
@@ -116,8 +116,6 @@ MEMORY_TTL = 604800            # Memory TTL (seconds)
 ```
 
 ## Test Queries
-
-
 
 **Short-Term Memory**
 ```  
