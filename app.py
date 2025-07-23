@@ -128,7 +128,7 @@ async def serve_frontend():
 @app.post("/chat/arch1", response_model=ChatResponse)
 async def redis_enhanced_architecture(request: ChatRequest):
     """
-    The Redis-enhanced version with caching, memory, and query filtering.
+    This is the fun one - Redis does all the heavy lifting with caching and memory.
     
     Flow: Query → Check if allowed → Check cache → Get memories → Call Bedrock
     """

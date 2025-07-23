@@ -1,8 +1,28 @@
 # Redis-Enhanced AWS Bedrock Agent
 
-Demonstrates the technical impact of integrating Redis Enterprise with AWS Bedrock Agents through a side-by-side architecture comparison. This implementation measures performance improvements from semantic caching, conversation memory, and intelligent query routing.
+A side-by-side architecture comparison demonstrating Redis Enterprise performance optimizations for AWS Bedrock Agents.
+
+## Background
+
+Financial organizations face significant challenges with multi-modal data - from market feeds and economic indicators to news, social media, and risk assessments. The fragmented, unstructured nature of this data creates operational overhead, requiring complex transformation logic that drives up costs and complexity.
+
+Multi-modal AI agents address these challenges by intelligently processing diverse data types and connecting insights across modalities. In financial markets, these agents excel at automated reporting, quantitative forecasting, and compliance monitoring - dramatically improving analyst productivity by handling routine tasks and accelerating research workflows.
+
+This demo showcases how Redis Enterprise enhances AWS Bedrock agents with semantic caching, conversation memory, and intelligent routing - enabling fast responses for time-critical financial applications while reducing LLM API costs by up to 80% through intelligent caching strategies.
 
 ![Redis-Enhanced AWS Architecture](redis-aws-architecture-diagram.png)
+
+## Code Structure
+
+```
+├── app.py                 # FastAPI app
+├── config.py              # Config management
+├── redis_integration.py   # Redis Enterprise features
+├── bedrock_service.py     # AWS Bedrock abstraction
+├── index.html             # Comparison UI
+├── setup.sh               # Environment setup
+└── certs/                 # Redis TLS certificates
+```
 
 ## Prerequisites
 
@@ -82,15 +102,6 @@ export REDIS_CLIENT_KEY="./certs/client-key.pem"
 
 Access `http://localhost:8000` to interact with both architectures simultaneously and compare performance metrics.
 
-**Enhanced (Redis + AWS)**
-```
-Query → Semantic Router → Cache/Memory → Bedrock Agent → Redis VectorDB
-```
-
-**Standard (AWS Only)**  
-```
-Query → Bedrock Agent → OpenSearch
-```
 
 ## Configuration
 
@@ -101,18 +112,6 @@ SIMILARITY_THRESHOLD = 0.8      # Cache strictness (higher = more strict)
 MEMORY_THRESHOLD = 0.15         # Memory recall (lower = more recall)  
 CACHE_TTL = 86400              # Cache TTL (seconds)
 MEMORY_TTL = 604800            # Memory TTL (seconds)
-```
-
-## Code Structure
-
-```
-├── app.py                 # FastAPI application
-├── config.py              # Configuration management
-├── redis_integration.py   # Redis Enterprise features
-├── bedrock_service.py     # AWS Bedrock abstraction
-├── index.html             # Comparison UI
-├── setup.sh               # Environment setup
-└── certs/                 # Redis TLS certificates
 ```
 
 ## Test Queries

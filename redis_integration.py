@@ -163,48 +163,6 @@ class RedisSearchManager:
         return self.indices[schema_name]
 
 
-class QueryIntentClassifier:
-    """Query intent classification to prevent cache cross-pollination."""
-    
-    @staticmethod
-    def classify_intent(query: str) -> str:
-        """
-        Classify query intent to prevent cache mismatches.
-        
-        Args:
-            query: User query text
-            
-        Returns:
-            Intent category: 'question', 'statement', or 'analysis'
-        """
-        query_lower = query.lower().strip()
-        
-        # Question patterns
-        question_starters = [
-            'what', 'how', 'when', 'where', 'why', 'who', 'which',
-            'can', 'could', 'would', 'should', 'do', 'does', 'did',
-            'will', 'is', 'are', 'was', 'were',
-            'describe', 'explain', 'tell', 'show', 'list', 'identify',
-            'analyze', 'compare', 'evaluate', 'discuss', 'summarize',
-            'outline', 'detail', 'provide', 'give'
-        ]
-        
-        if any(query_lower.startswith(q) for q in question_starters) or query_lower.endswith('?'):
-            return "question"
-        
-        # Statement patterns
-        statement_starters = [
-            'i have', 'i am', 'i work', 'i live', 'i like', 'i dont', 
-            'i do not', 'my name', 'my favorite'
-        ]
-        
-        if any(query_lower.startswith(s) for s in statement_starters):
-            return "statement"
-        
-        # Default to analysis for financial queries
-        return "analysis"
-
-
 class RedisIntegration:
     """Main Redis integration class providing semantic caching, memory, and routing."""
     
@@ -638,3 +596,17 @@ class RedisIntegration:
         except Exception as e:
             print(f"[REDIS] Stats error: {e}")
             return {"cache_entries": 0, "memory_entries": 0, "router_entries": 0}
+
+
+# Internal utility for cache organization
+class QueryIntentClassifier:
+    @staticmethod
+    def classify_intent(query: str) -> str:
+        query_lower = query.lower().strip()
+        question_starters = ['what', 'how', 'when', 'where', 'why', 'who', 'which', 'can', 'could', 'would', 'should', 'do', 'does', 'did', 'will', 'is', 'are', 'was', 'were', 'describe', 'explain', 'tell', 'show', 'list', 'identify', 'analyze', 'compare', 'evaluate', 'discuss', 'summarize', 'outline', 'detail', 'provide', 'give']
+        if any(query_lower.startswith(q) for q in question_starters) or query_lower.endswith('?'):
+            return "question"
+        statement_starters = ['i have', 'i am', 'i work', 'i live', 'i like', 'i dont', 'i do not', 'my name', 'my favorite']
+        if any(query_lower.startswith(s) for s in statement_starters):
+            return "statement"
+        return "analysis"
