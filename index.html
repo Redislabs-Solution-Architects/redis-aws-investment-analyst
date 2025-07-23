@@ -1,0 +1,944 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Redis & AWS: Investment Analyst Assistant</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        redis: {
+                            red: '#DC382D',
+                            orange: '#FF6900',
+                            gray: '#6B7280'
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        .redis-gradient {
+            background: linear-gradient(135deg, #DC382D 0%, #FF6900 100%);
+        }
+        .shadow-short {
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+        }
+
+        .animate-fadeIn {
+            animation: fadeIn 0.3s ease-out;
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .modal-backdrop {
+            backdrop-filter: blur(4px);
+            animation: modalFadeIn 0.2s ease-out;
+        }
+
+        .modal-content {
+            animation: modalSlideIn 0.3s ease-out;
+        }
+
+        @keyframes modalFadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+
+        @keyframes modalSlideIn {
+            from { 
+                opacity: 0;
+                transform: scale(0.9) translateY(-20px);
+            }
+            to { 
+                opacity: 1;
+                transform: scale(1) translateY(0);
+            }
+        }
+
+        .arch-diagram {
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .arch-diagram:hover {
+            transform: scale(1.02);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+        }
+    </style>
+</head>
+<body class="h-screen bg-gray-500 flex flex-col">
+    <!-- Header with Redis branding -->
+    <header class="bg-white border-b border-gray-200 px-8 py-6">
+        <div class="flex items-center justify-between">
+            <div class="flex items-center space-x-4">
+                <div class="w-8 h-8 redis-gradient rounded"></div>
+                <div>
+                    <h1 class="text-2xl font-bold text-gray-900">Redis & AWS: Investment Analyst Assistant</h1>
+                </div>
+            </div>
+            <!-- Session Indicator -->
+            <div class="flex items-center space-x-3">
+                <div class="text-sm text-gray-600">
+                    <span class="font-medium">Session:</span>
+                    <span id="sessionIndicator" class="font-mono bg-gray-100 px-2 py-1 rounded text-xs">Loading...</span>
+                </div>
+                <div class="w-2 h-2 bg-green-500 rounded-full" id="connectionStatus" title="Connected to Redis"></div>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main comparison area -->
+    <div class="flex flex-1 min-h-0">
+        <!-- Architecture 2: AWS Standard -->
+        <div class="flex-1 flex flex-col bg-gray-50 border-r border-gray-200">
+            <div class="bg-white border-b border-gray-200 px-6 py-3">
+                <div class="flex items-center justify-between">
+                    <div class="flex items-center space-x-3">
+                        <div class="w-3 h-3 bg-orange-500 rounded-full"></div>
+                        <div>
+                            <h2 class="text-lg font-semibold text-gray-900">AWS Standard Stack</h2>
+                            <p class="text-sm text-gray-600 font-mono"> Bedrock Agent → OpenSearch Knowledge Base</p>
+                        </div>
+                    </div>
+                    <!-- Architecture Diagram Preview -->
+                    <div class="arch-diagram bg-gray-50 border border-gray-200 rounded-lg p-2 hover:bg-gray-100" onclick="openArchModal('arch2')">
+                        <img src="/static/aws-architecture-diagram.png" alt="Architecture 2 Diagram" class="w-16 h-12 object-contain">
+                        <div class="text-xs text-gray-500 text-center mt-1">Expand</div>
+                    </div>
+                </div>
+            </div>
+            <div class="flex-1 overflow-y-auto p-4 min-h-0" id="chatContainer2"></div>
+        </div>
+
+        <!-- Architecture 1: Redis Enhanced -->
+        <div class="flex-1 flex flex-col bg-gray-100">
+            <div class="bg-white border-b border-gray-200 px-6 py-3">
+                <div class="flex items-center justify-between">
+                    <div class="flex items-center space-x-3">
+                        <div class="w-3 h-3 bg-green-500 rounded-full"></div>
+                        <div>
+                            <h2 class="text-lg font-semibold text-gray-900">Redis Enhanced Stack</h2>
+                            <p class="text-sm text-gray-600 font-mono"> Semantic Cache & Routing → Bedrock Agent → Redis Knowledge Base</p>
+                        </div>
+                    </div>
+                    <!-- Architecture Diagram Preview -->
+                    <div class="arch-diagram bg-gray-50 border border-gray-200 rounded-lg p-2 hover:bg-gray-100" onclick="openArchModal('arch1')">
+                        <img src="/static/redis-aws-architecture-diagram.png" alt="Architecture 1 Diagram" class="w-16 h-12 object-contain">
+                        <div class="text-xs text-gray-500 text-center mt-1">Expand</div>
+                    </div>
+                </div>
+            </div>
+            <div class="flex-1 overflow-y-auto p-4 min-h-0" id="chatContainer1"></div>
+        </div>
+    </div>
+
+    <!-- Input area -->
+    <div class="bg-white border-t border-gray-200 p-4">
+        <div class="max-w-4xl mx-auto">
+            <div class="flex space-x-3 items-center">
+                <div class="flex-1">
+                    <div class="bg-white border border-gray-200 rounded-[28px] shadow-short px-4 py-2">
+                        <input 
+                            type="text" 
+                            id="queryInput" 
+                            placeholder="Ask me"
+                            class="w-full outline-none text-base placeholder-gray-500"
+                            autofocus
+                        />
+                    </div>
+                </div>
+                <button 
+                    id="sendButton" 
+                    onclick="sendQuery()" 
+                    class="bg-gray-900 hover:bg-gray-800 text-white p-2.5 rounded-lg transition-colors flex items-center justify-center"
+                    title="Send to Both"
+                >
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"></path>
+                    </svg>
+                </button>
+                
+                <!-- Settings Dropdown -->
+                <div class="relative">
+                    <button 
+                        id="settingsButton" 
+                        onclick="toggleSettingsDropdown()"
+                        class="bg-gray-100 hover:bg-gray-200 text-gray-600 px-3 py-2 rounded-lg transition-colors text-sm flex items-center space-x-1"
+                    >
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path>
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
+                        </svg>
+                        <span>Settings</span>
+                        <svg class="w-3 h-3 ml-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
+                        </svg>
+                    </button>
+                    
+                    <!-- Dropdown Menu -->
+                    <div id="settingsDropdown" class="hidden absolute right-0 bottom-full mb-2 w-48 bg-white border border-gray-200 rounded-lg shadow-lg z-10">
+                        <div class="py-1">
+                            <button 
+                                onclick="clearCache(); toggleSettingsDropdown()" 
+                                class="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 flex items-center space-x-2"
+                            >
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path>
+                                </svg>
+                                <span>Clear Cache</span>
+                            </button>
+                            <button 
+                                onclick="newSession(); toggleSettingsDropdown()" 
+                                class="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 flex items-center space-x-2"
+                            >
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path>
+                                </svg>
+                                <span>New Session</span>
+                            </button>
+                            <button 
+                                onclick="resetEverything(); toggleSettingsDropdown()" 
+                                class="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 flex items-center space-x-2"
+                            >
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
+                                </svg>
+                                <span>Reset All</span>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const chatContainer1 = document.getElementById('chatContainer1');
+        const chatContainer2 = document.getElementById('chatContainer2');
+        const queryInput = document.getElementById('queryInput');
+        const sendButton = document.getElementById('sendButton');
+        
+        // Track message pairs for alignment
+        let messagePairCount = 0;
+        
+        // Initialize session indicator on page load
+        document.addEventListener('DOMContentLoaded', function() {
+            updateSessionIndicator();
+        });
+        
+        // Session management - maintain same session across requests
+        let sessionId = localStorage.getItem('financial-agent-session') || null;
+        
+        // Ensure session is always properly set
+        function ensureSessionId() {
+            if (!sessionId) {
+                sessionId = generateSessionId();
+                localStorage.setItem('financial-agent-session', sessionId);
+                console.log('[SESSION] Generated new session ID:', sessionId.substring(0, 8) + '...');
+            }
+            return sessionId;
+        }
+        
+        function generateSessionId() {
+            return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+                var r = Math.random() * 16 | 0, v = c == 'x' ? r : (r & 0x3 | 0x8);
+                return v.toString(16);
+            });
+        }
+
+        queryInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                sendQuery();
+            }
+        });
+
+        function addMessage(container, content, isUser = false, cached = false, responseTime = null, architecture = '', routed = false, pairId = null, traceData = null) {
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `mb-4 animate-fadeIn ${isUser 
+                ? 'ml-8 bg-gray-600 text-white p-4 rounded-lg rounded-tr-sm' 
+                : 'mr-8 bg-white border border-gray-200 p-4 rounded-lg shadow-short'
+            }`;
+            
+            // Add data attribute for message pairing
+            if (pairId !== null) {
+                messageDiv.setAttribute('data-pair-id', pairId);
+            }
+            
+            let headerHtml = '';
+            if (!isUser && (cached !== null || responseTime !== null || routed === true || traceData !== null)) {
+                headerHtml = '<div class="flex justify-between items-center mb-3 pb-2 border-b border-gray-100">';
+                
+                // Left side: badges
+                headerHtml += '<div class="flex items-center space-x-2">';
+                if (cached === true) {
+                    headerHtml += '<span class="bg-green-100 text-green-800 px-3 py-1 rounded-full text-xs font-semibold">⚡ Cached</span>';
+                }
+                if (routed === true) {
+                    headerHtml += '<span class="bg-orange-100 text-orange-800 px-3 py-1 rounded-full text-xs font-semibold">🛡️ Filtered</span>';
+                }
+                headerHtml += '</div>';
+                
+                // Right side: time and trace button
+                headerHtml += '<div class="flex items-center space-x-2">';
+                if (responseTime !== null) {
+                    headerHtml += `<span class="bg-yellow-100 text-yellow-800 px-3 py-1 rounded-full text-xs font-semibold">🕒 ${responseTime}s</span>`;
+                }
+                if (traceData !== null && architecture === '1') {
+                    // Generate unique ID for this message's trace data
+                    const traceId = `trace-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+                    // Store trace data
+                    window.traceDataStore = window.traceDataStore || {};
+                    window.traceDataStore[traceId] = traceData;
+                    
+                    headerHtml += `<button onclick="showTraceDetails('${traceId}')" class="text-gray-500 hover:text-gray-700 transition-colors" title="View processing details">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                        </svg>
+                    </button>`;
+                }
+                headerHtml += '</div>';
+                
+                headerHtml += '</div>';
+            }
+            
+            const textColor = isUser ? 'text-white' : 'text-gray-800';
+            messageDiv.innerHTML = headerHtml + `<div class="${textColor}">${escapeHtml(content)}</div>`;
+            container.appendChild(messageDiv);
+            container.scrollTop = container.scrollHeight;
+            
+            // Align paired messages after adding
+            if (!isUser && pairId !== null) {
+                alignMessagePair(pairId);
+            }
+        }
+        
+        function alignMessagePair(pairId) {
+            // Get both messages with the same pair ID
+            const message1 = chatContainer1.querySelector(`[data-pair-id="${pairId}"]:last-child`);
+            const message2 = chatContainer2.querySelector(`[data-pair-id="${pairId}"]:last-child`);
+            
+            if (message1 && message2) {
+                // Get heights
+                const height1 = message1.offsetHeight;
+                const height2 = message2.offsetHeight;
+                
+                // Add padding to the shorter message to align them
+                if (height1 > height2) {
+                    const diff = height1 - height2;
+                    message2.style.marginBottom = `${diff + 16}px`; // 16px is default mb-4
+                } else if (height2 > height1) {
+                    const diff = height2 - height1;
+                    message1.style.marginBottom = `${diff + 16}px`; // 16px is default mb-4
+                }
+            }
+        }
+
+        function showLoading(container, architecture) {
+            const loadingDiv = document.createElement('div');
+            loadingDiv.className = 'mb-4 mr-8 bg-gray-50 border border-gray-200 p-4 rounded-lg shadow-short';
+            loadingDiv.id = `loadingMessage${architecture}`;
+            loadingDiv.innerHTML = `
+                <div class="flex items-center space-x-3 text-gray-500">
+                    <div class="animate-spin w-4 h-4 border-2 border-gray-300 border-t-blue-600 rounded-full"></div>
+                    <span class="text-sm">Processing your request...</span>
+                </div>
+            `;
+            container.appendChild(loadingDiv);
+            container.scrollTop = container.scrollHeight;
+        }
+
+        function hideLoading(architecture) {
+            const loadingDiv = document.getElementById(`loadingMessage${architecture}`);
+            if (loadingDiv) {
+                loadingDiv.remove();
+            }
+        }
+
+        function showError(container, error) {
+            const errorDiv = document.createElement('div');
+            errorDiv.className = 'mb-4 mr-8 bg-red-50 border border-red-200 p-4 rounded-lg text-red-800';
+            errorDiv.innerHTML = `<strong>Error:</strong> ${error}`;
+            container.appendChild(errorDiv);
+            container.scrollTop = container.scrollHeight;
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        async function sendQuery() {
+            const query = queryInput.value.trim();
+            if (!query) return;
+
+            // Disable input
+            queryInput.value = '';
+            sendButton.disabled = true;
+
+            // Ensure we have a session ID before sending
+            const currentSessionId = ensureSessionId();
+
+            // Generate a unique pair ID for this query/response set
+            const currentPairId = `pair-${messagePairCount++}`;
+
+            // Add user message to both containers with pair ID
+            addMessage(chatContainer1, query, true, false, null, '1', false, currentPairId);
+            addMessage(chatContainer2, query, true, false, null, '2', false, currentPairId);
+
+            // Show loading for both
+            showLoading(chatContainer1, '1');
+            showLoading(chatContainer2, '2');
+
+            // Send requests to both architectures simultaneously with session ID
+            console.log('[SESSION] Sending with sessionId:', currentSessionId.substring(0, 8) + '...');
+            const requestBody = { 
+                query: query,
+                session_id: currentSessionId 
+            };
+            
+            const [arch1Promise, arch2Promise] = [
+                fetch('/chat/arch1', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(requestBody),
+                }),
+                fetch('/chat/arch2', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(requestBody),
+                })
+            ];
+
+            // Handle Architecture 1 response
+            arch1Promise.then(async response => {
+                hideLoading('1');
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                const data = await response.json();
+                
+                // ALWAYS store/update session ID from Architecture 1 (the memory-enabled one)
+                if (data.session_id) {
+                    sessionId = data.session_id;
+                    localStorage.setItem('financial-agent-session', sessionId);
+                    console.log('[SESSION] Session ID confirmed from Arch1:', sessionId.substring(0, 8) + '...');
+                    updateSessionIndicator();
+                } else {
+                    console.warn('[SESSION] No session ID returned from Arch1');
+                }
+                
+                console.log('[DEBUG] Arch1 response data:', data);
+                addMessage(chatContainer1, data.response, false, data.cached, data.time, '1', data.routed, currentPairId, data.trace_data);
+            }).catch(error => {
+                hideLoading('1');
+                showError(chatContainer1, error.message);
+            });
+
+            // Handle Architecture 2 response
+            arch2Promise.then(async response => {
+                hideLoading('2');
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                const data = await response.json();
+                
+                // Don't update session ID from Architecture 2 - use only Arch1's session for consistency
+                
+                addMessage(chatContainer2, data.response, false, data.cached, data.time, '2', data.routed, currentPairId);
+            }).catch(error => {
+                hideLoading('2');
+                showError(chatContainer2, error.message);
+            });
+
+            // Re-enable input after both complete
+            Promise.allSettled([arch1Promise, arch2Promise]).finally(() => {
+                sendButton.disabled = false;
+                queryInput.focus();
+            });
+        }
+
+        async function clearCache() {
+            try {
+                const response = await fetch('/clear-cache', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' }
+                });
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    alert(data.message + '\n\nNote: Conversation memory is preserved for this session.');
+                } else {
+                    alert('Failed to clear cache');
+                }
+            } catch (error) {
+                alert('Error clearing cache: ' + error.message);
+            }
+        }
+        
+        function updateSessionIndicator() {
+            const indicator = document.getElementById('sessionIndicator');
+            if (sessionId) {
+                indicator.textContent = sessionId.substring(0, 8) + '...';
+                indicator.className = 'font-mono bg-green-100 text-green-800 px-2 py-1 rounded text-xs';
+            } else {
+                indicator.textContent = 'No Session';
+                indicator.className = 'font-mono bg-gray-100 px-2 py-1 rounded text-xs';
+            }
+        }
+        
+        function newSession() {
+            // Clear session ID to start fresh conversation
+            sessionId = null;
+            localStorage.removeItem('financial-agent-session');
+            chatContainer1.innerHTML = '';
+            chatContainer2.innerHTML = '';
+            updateSessionIndicator();
+            console.log('[SESSION] Started new session - memory reset');
+            alert('New session started! Previous conversation memory cleared.');
+        }
+        
+        async function resetEverything() {
+            // Use the new reset-all endpoint
+            try {
+                const response = await fetch('/reset-all', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' }
+                });
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    console.log('[RESET] Backend reset successful:', data);
+                    
+                    // Clear session and UI
+                    sessionId = null;
+                    localStorage.removeItem('financial-agent-session');
+                    chatContainer1.innerHTML = '';
+                    chatContainer2.innerHTML = '';
+                    updateSessionIndicator();
+                    
+                    console.log('[RESET] Everything reset - cache, memory, and session');
+                    alert(`Complete reset successful!\n\n${data.message}`);
+                } else {
+                    console.warn('[RESET] Failed to reset backend data');
+                    alert('Failed to reset backend data. Please try again.');
+                }
+            } catch (error) {
+                console.error('[RESET] Error during reset:', error);
+                alert('Error during reset: ' + error.message);
+            }
+        }
+
+        async function runDemo() {
+            const demoQueries = [
+                "How do I cook Pasta",
+                "What are Amazon's primary financial risk factors?",
+                "Amazon's key operational and financial risk exposures",  // Semantically similar to first
+                "What are the main financial risks facing Amazon?",      // Semantically similar to first
+                "Apple's earnings performance and key metrics",
+                "Apple financial performance analysis",    // Semantically similar to 4th  
+            ];
+
+            // Clear existing messages
+            chatContainer1.innerHTML = '<div style="text-align: center; color: #94a3b8; padding: 24px; font-weight: 500;">Benchmarking Optimized Stack Performance...</div>';
+            chatContainer2.innerHTML = '<div style="text-align: center; color: #94a3b8; padding: 24px; font-weight: 500;">Benchmarking Standard Stack Performance...</div>';
+
+            let arch1Total = 0;
+            let arch2Total = 0;
+
+            for (let i = 0; i < demoQueries.length; i++) {
+                const query = demoQueries[i];
+                
+                // Add query to both containers
+                addMessage(chatContainer1, `Test ${i+1}: ${query}`, true);
+                addMessage(chatContainer2, `Test ${i+1}: ${query}`, true);
+
+                // Show loading for both
+                showLoading(chatContainer1, '1');
+                showLoading(chatContainer2, '2');
+
+                try {
+                    // Send to both architectures
+                    const [response1, response2] = await Promise.all([
+                        fetch('/chat/arch1', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ query }),
+                        }),
+                        fetch('/chat/arch2', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ query }),
+                        })
+                    ]);
+
+                    hideLoading('1');
+                    hideLoading('2');
+
+                    const data1 = await response1.json();
+                    const data2 = await response2.json();
+
+                    arch1Total += data1.time;
+                    arch2Total += data2.time;
+
+                    // Add responses with cumulative times
+                    addMessage(chatContainer1, 
+                        `Analysis: ${data1.response.substring(0, 100)}...\n\n` +
+                        `Response Time: ${data1.time}s | Total Elapsed: ${arch1Total.toFixed(1)}s`, 
+                        false, data1.cached, data1.time);
+                    
+                    addMessage(chatContainer2, 
+                        `Analysis: ${data2.response.substring(0, 100)}...\n\n` +
+                        `Response Time: ${data2.time}s | Total Elapsed: ${arch2Total.toFixed(1)}s`, 
+                        false, false, data2.time);
+
+                } catch (error) {
+                    hideLoading('1');
+                    hideLoading('2');
+                    showError(chatContainer1, error.message);
+                    showError(chatContainer2, error.message);
+                }
+
+                // Wait 1.5 seconds between test queries for clear demonstration
+                await new Promise(resolve => setTimeout(resolve, 1500));
+            }
+
+            // Show final benchmark results
+            const timeSavings = arch2Total - arch1Total;
+            const performanceMultiplier = (arch2Total / arch1Total).toFixed(1);
+            const avgOptimized = (arch1Total / demoQueries.length).toFixed(1);
+            const avgStandard = (arch2Total / demoQueries.length).toFixed(1);
+            const efficiencyGain = ((timeSavings / arch2Total) * 100).toFixed(1);
+            
+            setTimeout(() => {
+                addMessage(chatContainer1, 
+                    `OPTIMIZED STACK RESULTS:\n\n` +
+                    `Total Processing Time: ${arch1Total.toFixed(1)}s\n` +
+                    `Average Response Time: ${avgOptimized}s\n` +
+                    `Time Efficiency Gain: ${timeSavings.toFixed(1)}s\n` +
+                    `Performance Multiplier: ${performanceMultiplier}x faster\n\n` +
+                    `KEY OPTIMIZATIONS:\n` +
+                    `Vector Cache: Sub-second response hits\n` +
+                    `Intelligent Routing: Domain-filtered queries\n` +
+                    `Cost Optimization: ${efficiencyGain}% fewer API calls`, 
+                    false, false, null);
+                
+                addMessage(chatContainer2, 
+                    `STANDARD STACK RESULTS:\n\n` +
+                    `Total Processing Time: ${arch2Total.toFixed(1)}s\n` +
+                    `Average Response Time: ${avgStandard}s\n` +
+                    `Processing Overhead: No caching layer\n` +
+                    `Query Handling: Direct API calls only\n\n` +
+                    `BENCHMARK COMPARISON:\n` +
+                    `Performance Delta: ${performanceMultiplier}x slower\n` +
+                    `Additional Latency: +${timeSavings.toFixed(1)}s\n` +
+                    `Cost Impact: ${efficiencyGain}% more API calls\n` +
+                    `Optimization Potential: Vector caching layer`, 
+                    false, false, null);
+            }, 1000);
+        }
+
+        // Modal functions for architecture diagrams
+        function openArchModal(archType) {
+            const modal = document.getElementById('archModal');
+            const modalImage = document.getElementById('modalImage');
+            const modalTitle = document.getElementById('modalTitle');
+            
+            if (archType === 'arch1') {
+                modalImage.src = '/static/redis-aws-architecture-diagram.png';
+                modalTitle.textContent = 'Redis Enhanced Architecture';
+            } else if (archType === 'arch2') {
+                modalImage.src = '/static/aws-architecture-diagram.png';
+                modalTitle.textContent = 'AWS Standard Architecture';
+            }
+            
+            modal.classList.remove('hidden');
+            document.body.style.overflow = 'hidden';
+        }
+
+        function closeArchModal() {
+            const modal = document.getElementById('archModal');
+            modal.classList.add('hidden');
+            document.body.style.overflow = 'auto';
+        }
+
+        // Close modal when clicking outside
+        function handleModalClick(event) {
+            if (event.target.id === 'archModal') {
+                closeArchModal();
+            }
+        }
+
+        // Close modal with Escape key
+        document.addEventListener('keydown', function(event) {
+            if (event.key === 'Escape') {
+                closeArchModal();
+                closeSettingsDropdown();
+            }
+        });
+
+        // Settings dropdown functions
+        function toggleSettingsDropdown() {
+            const dropdown = document.getElementById('settingsDropdown');
+            dropdown.classList.toggle('hidden');
+        }
+
+        function closeSettingsDropdown() {
+            const dropdown = document.getElementById('settingsDropdown');
+            dropdown.classList.add('hidden');
+        }
+
+        // Close dropdown when clicking outside
+        document.addEventListener('click', function(event) {
+            const dropdown = document.getElementById('settingsDropdown');
+            const button = document.getElementById('settingsButton');
+            
+            if (!dropdown.contains(event.target) && !button.contains(event.target)) {
+                closeSettingsDropdown();
+            }
+        });
+
+        // Trace Details Functions
+        function showTraceDetails(traceId) {
+            const traceData = window.traceDataStore[traceId];
+            if (!traceData) return;
+            
+            const modal = document.getElementById('traceModal');
+            const content = document.getElementById('traceModalContent');
+            
+            // Generate content based on trace type
+            let contentHtml = '';
+            
+            if (traceData.type === 'filtered') {
+                contentHtml = `
+                    <div class="space-y-4">
+                        <div class="bg-orange-50 border border-orange-200 rounded-lg p-4">
+                            <h3 class="text-lg font-semibold text-orange-900 mb-2">Query Filtered</h3>
+                            <p class="text-orange-800">This question was identified as off-topic for the financial analysis system.</p>
+                        </div>
+                        
+                        <div class="bg-white border border-gray-200 rounded-lg p-4">
+                            <h4 class="font-semibold text-gray-900 mb-2">Detection Confidence</h4>
+                            <div class="flex items-center space-x-3">
+                                <div class="flex-1 bg-gray-200 rounded-full h-3">
+                                    <div class="bg-orange-500 h-3 rounded-full" style="width: ${traceData.confidence * 100}%"></div>
+                                </div>
+                                <span class="text-sm font-medium text-gray-700">${Math.round(traceData.confidence * 100)}%</span>
+                            </div>
+                        </div>
+                        
+                        <div class="bg-gray-50 border border-gray-200 rounded-lg p-4">
+                            <h4 class="font-semibold text-gray-900 mb-2">Allowed Topics</h4>
+                            <ul class="space-y-1">
+                                ${traceData.allowed_topics.map(topic => `<li class="text-gray-700">• ${topic}</li>`).join('')}
+                            </ul>
+                        </div>
+                    </div>
+                `;
+            } else if (traceData.type === 'cache_hit') {
+                const matchPercent = Math.round(traceData.similarity_score * 100);
+                contentHtml = `
+                    <div class="space-y-4">
+                        <div class="bg-green-50 border border-green-200 rounded-lg p-4">
+                            <h3 class="text-lg font-semibold text-green-900 mb-2">Found Similar Question</h3>
+                            <p class="text-green-800">Retrieved a cached response from a previous similar question.</p>
+                        </div>
+                        
+                        <div class="bg-white border border-gray-200 rounded-lg p-4">
+                            <h4 class="font-semibold text-gray-900 mb-2">Match Quality</h4>
+                            <div class="flex items-center space-x-3">
+                                <div class="flex-1 bg-gray-200 rounded-full h-3">
+                                    <div class="bg-green-500 h-3 rounded-full" style="width: ${matchPercent}%"></div>
+                                </div>
+                                <span class="text-sm font-medium text-gray-700">${matchPercent}% match</span>
+                            </div>
+                        </div>
+                        
+                        <div class="bg-gray-50 border border-gray-200 rounded-lg p-4">
+                            <h4 class="font-semibold text-gray-900 mb-2">Original Question</h4>
+                            <p class="text-gray-700 italic">"${traceData.matched_query}"</p>
+                        </div>
+                        
+
+                        
+                        ${traceData.memory_used > 0 ? `
+                        <div class="bg-purple-50 border border-purple-200 rounded-lg p-4">
+                            <p class="text-purple-800">Also used ${traceData.memory_used} piece${traceData.memory_used > 1 ? 's' : ''} of conversation context</p>
+                        </div>
+                        ` : ''}
+                    </div>
+                `;
+            } else if (traceData.type === 'fresh_query') {
+                contentHtml = `
+                    <div class="space-y-4">
+                        <div class="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                            <h3 class="text-lg font-semibold text-blue-900 mb-2">New Question Processed</h3>
+                            <p class="text-blue-800">This question was sent to the AI agent for a fresh response.</p>
+                        </div>
+                        
+                        ${traceData.memory_context_used && traceData.memory_context_used.length > 0 ? `
+                        <div class="bg-purple-50 border border-purple-200 rounded-lg p-4">
+                            <h4 class="font-semibold text-purple-900 mb-3">Used Conversation Context</h4>
+                            <div class="space-y-3">
+                                ${traceData.memory_context_used.map(mem => `
+                                    <div class="bg-white rounded p-3 text-sm">
+                                        <div class="flex items-start space-x-2 mb-1">
+                                            <span class="text-purple-600 font-medium">You:</span>
+                                            <p class="text-gray-700 flex-1">${mem.user_said}</p>
+                                        </div>
+                                        <div class="flex items-start space-x-2">
+                                            <span class="text-purple-600 font-medium">Agent:</span>
+                                            <p class="text-gray-600 flex-1">${mem.agent_responded}</p>
+                                        </div>
+                                        <div class="text-xs text-gray-500 mt-1">Relevance: ${Math.round(mem.relevance * 100)}%</div>
+                                    </div>
+                                `).join('')}
+                            </div>
+                        </div>
+                        ` : ''}
+                        
+                        <div class="bg-gray-50 border border-gray-200 rounded-lg p-4">
+                            <h4 class="font-semibold text-gray-900 mb-2">Query Analysis</h4>
+                            <div class="grid grid-cols-2 gap-3 text-sm">
+                                <div>
+                                    <span class="text-gray-600">Intent Type:</span>
+                                    <span class="font-medium ml-1">${traceData.query_intent || 'analysis'}</span>
+                                </div>
+                                <div>
+                                    <span class="text-gray-600">Route Confidence:</span>
+                                    <span class="font-medium ml-1">${Math.round(traceData.route_confidence * 100)}%</span>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+                            <p class="text-yellow-800 text-sm">This response has been cached for faster future queries</p>
+                        </div>
+                    </div>
+                `;
+            }
+            
+            content.innerHTML = contentHtml;
+            modal.classList.remove('hidden');
+            document.body.style.overflow = 'hidden';
+        }
+        
+        function closeTraceModal() {
+            const modal = document.getElementById('traceModal');
+            modal.classList.add('hidden');
+            document.body.style.overflow = 'auto';
+        }
+        
+        function formatTimeAgo(timestamp) {
+            const date = new Date(timestamp);
+            const now = new Date();
+            const seconds = Math.floor((now - date) / 1000);
+            
+            if (seconds < 60) return 'just now';
+            if (seconds < 3600) return `${Math.floor(seconds / 60)} minute${Math.floor(seconds / 60) > 1 ? 's' : ''} ago`;
+            if (seconds < 86400) return `${Math.floor(seconds / 3600)} hour${Math.floor(seconds / 3600) > 1 ? 's' : ''} ago`;
+            return `${Math.floor(seconds / 86400)} day${Math.floor(seconds / 86400) > 1 ? 's' : ''} ago`;
+        }
+        
+        // Update escape key handler
+        document.addEventListener('keydown', function(event) {
+            if (event.key === 'Escape') {
+                closeArchModal();
+                closeSettingsDropdown();
+                closeTraceModal();
+            }
+        });
+    </script>
+
+    <!-- Trace Details Modal -->
+    <div id="traceModal" class="hidden fixed inset-0 bg-black bg-opacity-50 modal-backdrop z-50 flex items-center justify-center p-4" onclick="if (event.target === this) closeTraceModal()">
+        <div class="modal-content bg-white rounded-lg shadow-2xl max-w-2xl w-full max-h-[90vh] flex flex-col">
+            <!-- Modal Header -->
+            <div class="flex items-center justify-between p-6 border-b border-gray-200">
+                <h3 class="text-xl font-semibold text-gray-900">Processing Details</h3>
+                <button 
+                    onclick="closeTraceModal()" 
+                    class="text-gray-400 hover:text-gray-600 transition-colors"
+                    aria-label="Close modal"
+                >
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                    </svg>
+                </button>
+            </div>
+            
+            <!-- Modal Content -->
+            <div class="flex-1 p-6 overflow-auto" id="traceModalContent">
+                <!-- Content will be dynamically inserted here -->
+            </div>
+            
+            <!-- Modal Footer -->
+            <div class="p-6 border-t border-gray-200 bg-gray-50">
+                <div class="flex justify-end">
+                    <button 
+                        onclick="closeTraceModal()" 
+                        class="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors"
+                    >
+                        Close
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Architecture Modal -->
+    <div id="archModal" class="hidden fixed inset-0 bg-black bg-opacity-50 modal-backdrop z-50 flex items-center justify-center p-4" onclick="handleModalClick(event)">
+        <div class="modal-content bg-white rounded-lg shadow-2xl max-w-4xl w-full max-h-[90vh] flex flex-col">
+            <!-- Modal Header -->
+            <div class="flex items-center justify-between p-6 border-b border-gray-200">
+                <h3 id="modalTitle" class="text-xl font-semibold text-gray-900">Architecture Diagram</h3>
+                <button 
+                    onclick="closeArchModal()" 
+                    class="text-gray-400 hover:text-gray-600 transition-colors"
+                    aria-label="Close modal"
+                >
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                    </svg>
+                </button>
+            </div>
+            
+            <!-- Modal Content -->
+            <div class="flex-1 p-6 overflow-auto">
+                <img 
+                    id="modalImage" 
+                    src="" 
+                    alt="Architecture Diagram" 
+                    class="w-full h-auto rounded-lg shadow-sm"
+                >
+            </div>
+            
+            <!-- Modal Footer -->
+            <div class="p-6 border-t border-gray-200 bg-gray-50">
+                <div class="flex justify-end">
+                    <button 
+                        onclick="closeArchModal()" 
+                        class="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors"
+                    >
+                        Close
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+</body>
+</html>

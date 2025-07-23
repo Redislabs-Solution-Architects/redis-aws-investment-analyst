@@ -1,0 +1,48 @@
+#!/bin/bash
+
+# Redis-Enhanced AWS Bedrock Financial Agent Setup
+# Copy this file to setup.sh and configure your credentials
+
+# AWS Configuration
+export AWS_ACCESS_KEY_ID="your-aws-access-key"
+export AWS_SECRET_ACCESS_KEY="your-aws-secret-key"
+export AWS_REGION="us-west-2"
+
+# Bedrock Agent IDs 
+# Get OpenSearch agent from: https://github.com/aws-samples/amazon-bedrock-samples/tree/main/agents-and-function-calling/bedrock-agents/use-case-examples/ai-powered-assistant-for-investment-research
+# Create Redis agent following README steps
+export BEDROCK_AGENT_ID_REDIS="your-redis-agent-id"
+export BEDROCK_AGENT_ID_OPENSEARCH="your-opensearch-agent-id"
+
+# Redis Enterprise Configuration
+export REDIS_HOST="your-redis-host.redis-cloud.com"
+export REDIS_PORT="12345"
+export REDIS_PASSWORD="your-redis-password"
+
+# Redis TLS Certificates (required - download from Redis Cloud console)
+export REDIS_CA_CERT="./certs/redis_ca.pem"
+export REDIS_CLIENT_CERT="./certs/client-cert.pem"
+export REDIS_CLIENT_KEY="./certs/client-key.pem"
+
+# Install dependencies and start application
+echo "Installing dependencies..."
+pip install -r requirements.txt
+
+# Ask about regenerating semantic router embeddings
+echo ""
+echo "The semantic router uses pre-generated embeddings to filter queries."
+echo "These embeddings are reused between sessions for faster startup."
+echo ""
+read -p "Do you want to regenerate router embeddings? (y/N): " regenerate_embeddings
+
+if [[ $regenerate_embeddings =~ ^[Yy]$ ]]; then
+    echo "Setting flag to regenerate router embeddings..."
+    export REGENERATE_ROUTER_EMBEDDINGS="true"
+else
+    echo "Using existing router embeddings (faster startup)..."
+    export REGENERATE_ROUTER_EMBEDDINGS="false"
+fi
+
+echo ""
+echo "Starting the application..."
+python app.py
