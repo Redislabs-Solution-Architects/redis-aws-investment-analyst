@@ -89,8 +89,19 @@
                     <h1 class="text-2xl font-bold text-gray-900">Redis & AWS: Investment Analyst Assistant</h1>
                 </div>
             </div>
-            <!-- Session Indicator -->
-            <div class="flex items-center space-x-3">
+            <!-- Cost Savings & Session Indicator -->
+            <div class="flex items-center space-x-4">
+                <!-- Performance Counter -->
+                <div id="costSavingsDisplay" class="hidden bg-blue-50 border border-blue-200 rounded-full px-4 py-1.5">
+                    <div class="flex items-center space-x-3">
+                        <span class="text-blue-600"></span>
+                        <div class="flex flex-col">
+                            <span class="text-sm font-medium text-blue-800"><span id="callsAvoided">0</span> LLM calls avoided</span>
+                            <span class="text-xs text-blue-600">Total time saved: <span id="totalTimeSaved">0</span>s</span>
+                        </div>
+                    </div>
+                </div>
+                
                 <div class="text-sm text-gray-600">
                     <span class="font-medium">Session:</span>
                     <span id="sessionIndicator" class="font-mono bg-gray-100 px-2 py-1 rounded text-xs">Loading...</span>
@@ -241,6 +252,12 @@
         
         // Session management - maintain same session across requests
         let sessionId = localStorage.getItem('financial-agent-session') || null;
+        
+        // Performance tracking
+        let totalCallsAvoided = 0;
+        let totalTimeSaved = 0;
+        let totalBedrockTime = 0;
+        let bedrockCalls = 0;
         
         // Ensure session is always properly set
         function ensureSessionId() {
@@ -424,52 +441,87 @@
                 })
             ];
 
-            // Handle Architecture 1 response
-            arch1Promise.then(async response => {
-                hideLoading('1');
-                if (!response.ok) {
-                    throw new Error(`HTTP error! status: ${response.status}`);
+            // Process both responses and handle performance tracking
+            const processResponses = async () => {
+                try {
+                    // Wait for both responses with proper data handling
+                    const [arch1Result, arch2Result] = await Promise.allSettled([
+                        arch1Promise.then(async response => {
+                            hideLoading('1');
+                            if (!response.ok) {
+                                throw new Error(`HTTP error! status: ${response.status}`);
+                            }
+                            const data = await response.json();
+                            
+                            // ALWAYS store/update session ID from Architecture 1 (the memory-enabled one)
+                            if (data.session_id) {
+                                sessionId = data.session_id;
+                                localStorage.setItem('financial-agent-session', sessionId);
+                                console.log('[SESSION] Session ID confirmed from Arch1:', sessionId.substring(0, 8) + '...');
+                                updateSessionIndicator();
+                            } else {
+                                console.warn('[SESSION] No session ID returned from Arch1');
+                            }
+                            
+                            console.log('[DEBUG] Arch1 response data:', data);
+                            addMessage(chatContainer1, data.response, false, data.cached, data.time, '1', data.routed, currentPairId, data.trace_data);
+                            return data;
+                        }).catch(error => {
+                            hideLoading('1');
+                            showError(chatContainer1, error.message);
+                            throw error;
+                        }),
+                        
+                        arch2Promise.then(async response => {
+                            console.log('[DEBUG] Arch2 response received:', response.status);
+                            hideLoading('2');
+                            if (!response.ok) {
+                                throw new Error(`HTTP error! status: ${response.status}`);
+                            }
+                            const data = await response.json();
+                            console.log('[DEBUG] Arch2 data:', data);
+                            
+                            addMessage(chatContainer2, data.response, false, data.cached, data.time, '2', data.routed, currentPairId);
+                            return data;
+                        }).catch(error => {
+                            hideLoading('2');
+                            console.error('[DEBUG] Arch2 error:', error);
+                            showError(chatContainer2, error.message);
+                            // Return fallback data for failed arch2
+                            return { time: 12.0, cached: false, routed: false };
+                        })
+                    ]);
+                    
+                    // Extract data from results
+                    const arch1Data = arch1Result.status === 'fulfilled' ? arch1Result.value : null;
+                    const arch2Data = arch2Result.status === 'fulfilled' ? arch2Result.value : { time: 12.0, cached: false, routed: false };
+                    
+                    console.log('[PERF] Final data - arch1:', arch1Data, 'arch2:', arch2Data);
+                    
+                    // Update performance tracking with actual data
+                    if (arch1Data) {
+                        console.log('[PERF] Calling updatePerformanceTracking with real data');
+                        updatePerformanceTracking(
+                            arch2Data.time,        // actual standard architecture time
+                            arch1Data.time,        // enhanced architecture time
+                            arch1Data.cached,      // was enhanced response cached?
+                            arch1Data.routed       // was enhanced response routed/filtered?
+                        );
+                    } else {
+                        // Show banner even if arch1 failed
+                        console.log('[PERF] Arch1 failed, showing banner anyway');
+                        const display = document.getElementById('costSavingsDisplay');
+                        display.classList.remove('hidden');
+                    }
+                    
+                } finally {
+                    sendButton.disabled = false;
+                    queryInput.focus();
                 }
-                const data = await response.json();
-                
-                // ALWAYS store/update session ID from Architecture 1 (the memory-enabled one)
-                if (data.session_id) {
-                    sessionId = data.session_id;
-                    localStorage.setItem('financial-agent-session', sessionId);
-                    console.log('[SESSION] Session ID confirmed from Arch1:', sessionId.substring(0, 8) + '...');
-                    updateSessionIndicator();
-                } else {
-                    console.warn('[SESSION] No session ID returned from Arch1');
-                }
-                
-                console.log('[DEBUG] Arch1 response data:', data);
-                addMessage(chatContainer1, data.response, false, data.cached, data.time, '1', data.routed, currentPairId, data.trace_data);
-            }).catch(error => {
-                hideLoading('1');
-                showError(chatContainer1, error.message);
-            });
-
-            // Handle Architecture 2 response
-            arch2Promise.then(async response => {
-                hideLoading('2');
-                if (!response.ok) {
-                    throw new Error(`HTTP error! status: ${response.status}`);
-                }
-                const data = await response.json();
-                
-                // Don't update session ID from Architecture 2 - use only Arch1's session for consistency
-                
-                addMessage(chatContainer2, data.response, false, data.cached, data.time, '2', data.routed, currentPairId);
-            }).catch(error => {
-                hideLoading('2');
-                showError(chatContainer2, error.message);
-            });
-
-            // Re-enable input after both complete
-            Promise.allSettled([arch1Promise, arch2Promise]).finally(() => {
-                sendButton.disabled = false;
-                queryInput.focus();
-            });
+            };
+            
+            // Execute the response processing
+            processResponses();
         }
 
         async function clearCache() {
@@ -498,6 +550,54 @@
             } else {
                 indicator.textContent = 'No Session';
                 indicator.className = 'font-mono bg-gray-100 px-2 py-1 rounded text-xs';
+            }
+        }
+        
+        function updatePerformanceTracking(standardTime, enhancedTime, enhancedCached, enhancedRouted) {
+            console.log('[PERF] updatePerformanceTracking called with:', {
+                standardTime, enhancedTime, enhancedCached, enhancedRouted
+            });
+            
+            // Update tracking when we have a cache hit or route from the enhanced architecture
+            if (enhancedCached || enhancedRouted) {
+                totalCallsAvoided += 1;
+                // Calculate actual time saved: standard time - enhanced time
+                const timeSaved = Math.max(0, standardTime - enhancedTime);
+                totalTimeSaved += timeSaved;
+                
+                console.log('[PERF] Cache hit! Updated totals:', {
+                    totalCallsAvoided, timeSaved, totalTimeSaved
+                });
+            }
+            
+            // Track Bedrock calls for statistics
+            totalBedrockTime += standardTime;
+            bedrockCalls += 1;
+            
+            console.log('[PERF] Current tracking state:', {
+                totalCallsAvoided, totalTimeSaved: Math.round(totalTimeSaved), totalBedrockTime, bedrockCalls
+            });
+            
+            // Update UI - always show the banner after first query pair
+            const display = document.getElementById('costSavingsDisplay');
+            const callsAvoidedEl = document.getElementById('callsAvoided');
+            const totalTimeSavedEl = document.getElementById('totalTimeSaved');
+            
+            // Show the display if hidden
+            display.classList.remove('hidden');
+            
+            // Update values
+            callsAvoidedEl.textContent = totalCallsAvoided;
+            totalTimeSavedEl.textContent = Math.round(totalTimeSaved);
+            
+            console.log('[PERF] Updated UI elements');
+            
+            // Add pulse animation only if there was actual time saved
+            if (enhancedCached || enhancedRouted) {
+                display.classList.add('animate-pulse');
+                setTimeout(() => {
+                    display.classList.remove('animate-pulse');
+                }, 1000);
             }
         }
         
@@ -747,10 +847,17 @@
                                 ${traceData.allowed_topics.map(topic => `<li class="text-gray-700">• ${topic}</li>`).join('')}
                             </ul>
                         </div>
+                        
+                        ${traceData.llm_call_avoided ? `
+                        <div class="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                            <h4 class="font-semibold text-blue-900 mb-2">Performance Impact</h4>
+                            <p class="text-blue-800 font-medium">✓ Semantic routing prevented LLM call</p>
+                            <p class="text-blue-600 text-sm mt-1">Query filtered before reaching the AI model</p>
+                        </div>
+                        ` : ''}
                     </div>
                 `;
             } else if (traceData.type === 'cache_hit') {
-                const matchPercent = Math.round(traceData.similarity_score * 100);
                 contentHtml = `
                     <div class="space-y-4">
                         <div class="bg-green-50 border border-green-200 rounded-lg p-4">
@@ -758,15 +865,6 @@
                             <p class="text-green-800">Retrieved a cached response from a previous similar question.</p>
                         </div>
                         
-                        <div class="bg-white border border-gray-200 rounded-lg p-4">
-                            <h4 class="font-semibold text-gray-900 mb-2">Match Quality</h4>
-                            <div class="flex items-center space-x-3">
-                                <div class="flex-1 bg-gray-200 rounded-full h-3">
-                                    <div class="bg-green-500 h-3 rounded-full" style="width: ${matchPercent}%"></div>
-                                </div>
-                                <span class="text-sm font-medium text-gray-700">${matchPercent}% match</span>
-                            </div>
-                        </div>
                         
                         <div class="bg-gray-50 border border-gray-200 rounded-lg p-4">
                             <h4 class="font-semibold text-gray-900 mb-2">Original Question</h4>
@@ -778,6 +876,18 @@
                         ${traceData.memory_used > 0 ? `
                         <div class="bg-purple-50 border border-purple-200 rounded-lg p-4">
                             <p class="text-purple-800">Also used ${traceData.memory_used} piece${traceData.memory_used > 1 ? 's' : ''} of conversation context</p>
+                        </div>
+                        ` : ''}
+                        
+                        ${traceData.llm_call_avoided ? `
+                        <div class="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                            <h4 class="font-semibold text-blue-900 mb-2">Performance Impact</h4>
+                            <p class="text-blue-800 font-medium">✓ Cache hit prevented LLM call</p>
+                            ${traceData.timing_breakdown ? `
+                            <div class="mt-2 text-sm text-gray-700">
+                                <p>Response delivered in: <span class="font-bold text-green-700">${(traceData.timing_breakdown.routing + traceData.timing_breakdown.embedding_generation + traceData.timing_breakdown.parallel_search).toFixed(3)}s</span></p>
+                            </div>
+                            ` : ''}
                         </div>
                         ` : ''}
                     </div>

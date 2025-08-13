@@ -38,7 +38,7 @@ class BedrockConfig:
 @dataclass
 class CacheConfig:
     """Semantic caching configuration."""
-    similarity_threshold: float = 0.80
+    similarity_threshold: float = 0.70  # Lowered to catch more similar queries
     cache_ttl_seconds: int = 86400  # 24 hours
     memory_ttl_seconds: int = 3600 * 24 * 7  # 7 days
     memory_similarity_threshold: float = 0.15  # Permissive for demo
@@ -66,7 +66,7 @@ class AppConfig:
         )
         
         self.cache = CacheConfig(
-            similarity_threshold=float(os.getenv("SIMILARITY_THRESHOLD", "0.80"))
+            similarity_threshold=float(os.getenv("SIMILARITY_THRESHOLD", "0.70"))
         )
     
     def _validate_required_env_vars(self) -> None:

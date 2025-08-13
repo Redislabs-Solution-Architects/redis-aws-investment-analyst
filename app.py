@@ -69,6 +69,9 @@ config: AppConfig
 redis_integration: RedisIntegration  
 bedrock_service: BedrockService
 
+# Performance tracking
+total_llm_calls_avoided = 0
+
 
 def initialize_services() -> None:
     """Set up all the services we need to run the comparison."""
@@ -122,7 +125,7 @@ async def startup_event():
 @app.get("/")
 async def serve_frontend():
     """Serve the comparison UI."""
-    return FileResponse("index.html")
+    return FileResponse("index.html", headers={"Cache-Control": "no-cache, no-store, must-revalidate"})
 
 
 @app.post("/chat/arch1", response_model=ChatResponse)
@@ -132,20 +135,34 @@ async def redis_enhanced_architecture(request: ChatRequest):
     
     Flow: Query → Check if allowed → Check cache → Get memories → Call Bedrock
     """
+    global total_llm_calls_avoided
+    
     start_time = time.time()
+    timing_log = {}  # Track timing for each operation
     print(f"\n[REDIS-ARCH] Processing: '{request.query[:50]}...'")
     
     # Keep track of user sessions for memory
     session_id = request.session_id or generate_session_id()
     print(f"[REDIS-ARCH] Session: {session_id[:8]}...")
+    timing_log["session_init"] = round(time.time() - start_time, 3)
     
     try:
         # STEP 1: Check if this is a valid query type
         # Filter out stuff like "what's the weather" before hitting Bedrock
+        route_start = time.time()
         route_decision, route_confidence = redis_integration.route_query(request.query)
+        timing_log["routing"] = round(time.time() - route_start, 3)
         
         if route_decision == "not_allowed":
             print(f"[REDIS-ARCH] Query filtered by semantic routing")
+            
+            # Update global tracking
+            filter_time = round(time.time() - start_time, 3)
+            total_llm_calls_avoided += 1
+            
+            print(f"[REDIS-ARCH] Avoided LLM call via routing (response in {filter_time}s)")
+            print(f"[REDIS-ARCH] Total: {total_llm_calls_avoided} LLM calls avoided")
+            
             return ChatResponse(
                 response="Please ask me a question related to financial analysis, investment research, or personal information for memory testing.",
                 cached=False,
@@ -162,30 +179,56 @@ async def redis_enhanced_architecture(request: ChatRequest):
                         "Company performance",
                         "Market trends",
                         "Personal information"
-                    ]
+                    ],
+                    "llm_call_avoided": True
                 }
             )
         
         print(f"[REDIS-ARCH] Query approved (confidence: {route_confidence:.3f})")
         
-        # STEP 2: Look for relevant conversation history
-        # Check if user said anything related earlier in this session
-        memories = await redis_integration.search_conversation_memory(session_id, request.query)
+        # STEP 2: Generate embedding once for both searches
+        embedding_start = time.time()
+        loop = asyncio.get_event_loop()
+        query_embedding = await loop.run_in_executor(
+            None, redis_integration.embedding_service.embed, request.query
+        )
+        timing_log["embedding_generation"] = round(time.time() - embedding_start, 3)
+        
+        # STEP 3 & 4: Parallel search for memory and cache using same embedding
+        # Run both searches concurrently to save time
+        parallel_start = time.time()
+        memory_task = asyncio.create_task(
+            redis_integration.search_conversation_memory(session_id, request.query, query_embedding=query_embedding)
+        )
+        cache_task = asyncio.create_task(
+            redis_integration.search_semantic_cache(request.query, query_embedding=query_embedding)
+        )
+        
+        # Wait for both to complete
+        memories, cache_result = await asyncio.gather(memory_task, cache_task)
+        timing_log["parallel_search"] = round(time.time() - parallel_start, 3)
+        
         memory_context = redis_integration.format_memory_context(memories)
         
         if memories:
             print(f"[REDIS-ARCH] Retrieved {len(memories)} relevant memories")
         
-        # STEP 3: Check if we already answered something similar
-        # This is where the speed boost comes from
-        cache_result = await redis_integration.search_semantic_cache(request.query)
-        
         if cache_result:
             print(f"[REDIS-ARCH] Cache hit! (similarity: {cache_result.similarity_score:.3f})")
-            # Calculate time saved (typical Bedrock response time minus cache lookup time)
+            # Calculate cache response time
             cache_time = round(time.time() - start_time, 3)
-            estimated_bedrock_time = 8.0  # Average from benchmarks
-            time_saved = max(0, estimated_bedrock_time - cache_time)
+            
+            # Update global tracking
+            total_llm_calls_avoided += 1
+            
+            # Log timing breakdown
+            print(f"[REDIS-ARCH] Performance breakdown:")
+            print(f"  - Routing: {timing_log['routing']}s")
+            print(f"  - Embedding: {timing_log['embedding_generation']}s")
+            print(f"  - Search (parallel): {timing_log['parallel_search']}s")
+            print(f"  - Total: {cache_time}s")
+            print(f"[REDIS-ARCH] Cache hit avoided LLM call")
+            print(f"[REDIS-ARCH] Total: {total_llm_calls_avoided} LLM calls avoided")
             
             return ChatResponse(
                 response=cache_result.response,
@@ -197,8 +240,9 @@ async def redis_enhanced_architecture(request: ChatRequest):
                     "similarity_score": round(cache_result.similarity_score, 3),
                     "matched_query": cache_result.query,
                     "cache_timestamp": cache_result.timestamp,
-                    "time_saved": round(time_saved, 1),
-                    "memory_used": len(memories) if memories else 0
+                    "memory_used": len(memories) if memories else 0,
+                    "timing_breakdown": timing_log,
+                    "llm_call_avoided": True
                 }
             )
         
@@ -212,6 +256,7 @@ async def redis_enhanced_architecture(request: ChatRequest):
             context=memory_context
         )
         bedrock_elapsed = time.time() - bedrock_start
+        timing_log["bedrock_call"] = round(bedrock_elapsed, 3)
         
         print(f"[REDIS-ARCH] Agent response in {bedrock_elapsed:.3f}s")
         
@@ -234,10 +279,20 @@ async def redis_enhanced_architecture(request: ChatRequest):
                 print(f"[REDIS-ARCH] Background task failed: {error}")
         
         # Run this in background so user doesn't wait
+        background_start = time.time()
         asyncio.create_task(redis_background_tasks())
+        timing_log["background_task_launch"] = round(time.time() - background_start, 3)
         
         total_time = round(time.time() - start_time, 3)
-        print(f"[REDIS-ARCH] Total time: {total_time}s")
+        
+        # Log detailed timing breakdown
+        print(f"[REDIS-ARCH] Performance breakdown:")
+        print(f"  - Routing: {timing_log.get('routing', 0)}s")
+        print(f"  - Embedding: {timing_log.get('embedding_generation', 0)}s")
+        print(f"  - Search (parallel): {timing_log.get('parallel_search', 0)}s")
+        print(f"  - Bedrock call: {timing_log.get('bedrock_call', 0)}s")
+        print(f"  - Background launch: {timing_log.get('background_task_launch', 0)}s")
+        print(f"  - Total: {total_time}s")
         
         # Format memory entries for trace data
         memory_trace = []
@@ -261,7 +316,8 @@ async def redis_enhanced_architecture(request: ChatRequest):
                 "preprocessing_time": round(bedrock_start - start_time, 3),
                 "memory_context_used": memory_trace,
                 "route_confidence": round(route_confidence, 3),
-                "query_intent": redis_integration.intent_classifier.classify_intent(request.query)
+                "query_intent": redis_integration.intent_classifier.classify_intent(request.query),
+                "timing_breakdown": timing_log
             }
         )
         
@@ -420,6 +476,10 @@ async def get_redis_statistics():
                 "memory_threshold": config.cache.memory_similarity_threshold,
                 "cache_ttl": config.cache.cache_ttl_seconds,
                 "memory_ttl": config.cache.memory_ttl_seconds
+            },
+            "performance_impact": {
+                "llm_calls_avoided": total_llm_calls_avoided,
+                "optimization_methods": ["Semantic Caching", "Query Routing"]
             },
             "timestamp": datetime.utcnow().isoformat()
         }

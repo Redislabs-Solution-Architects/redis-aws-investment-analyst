@@ -55,6 +55,7 @@ class TitanEmbeddingService(BaseVectorizer):
     def embed(self, text: str, **kwargs) -> List[float]:
         """Turn text into a vector using Titan embeddings."""
         try:
+            start_time = time.time()
             response = self._bedrock_client.invoke_model(
                 modelId="amazon.titan-embed-text-v1",
                 contentType="application/json",
@@ -63,6 +64,8 @@ class TitanEmbeddingService(BaseVectorizer):
             )
             
             response_body = json.loads(response["body"].read())
+            embed_time = time.time() - start_time
+            print(f"[EMBEDDING] Generated in {embed_time:.3f}s for text: '{text[:30]}...'")
             return response_body["embedding"]
             
         except Exception as e:
@@ -173,6 +176,7 @@ class RedisIntegration:
         self.search_manager = RedisSearchManager(self.redis_client)
         self.embedding_service = TitanEmbeddingService(bedrock_client)
         self.intent_classifier = QueryIntentClassifier()
+        self._router_initialized = False
         
         # Initialize search indices
         self.cache_index = self.search_manager.initialize_index("semantic_cache")
@@ -194,7 +198,10 @@ class RedisIntegration:
             "host": redis_config.host,
             "port": redis_config.port,
             "password": redis_config.password,
-            "decode_responses": True
+            "decode_responses": True,
+            "socket_keepalive": True,
+            "socket_keepalive_options": {},
+            "health_check_interval": 30
         }
         
         if redis_config.has_client_certs:
@@ -279,6 +286,7 @@ class RedisIntegration:
                 print(f"[ROUTER] Test queries failed: {e}")
             
             print(f"[ROUTER] Initialized with {len(ALLOWED_QUERY_REFERENCES)} reference queries")
+            self._router_initialized = True
             return router
             
         except Exception as e:
@@ -334,7 +342,7 @@ class RedisIntegration:
     
     # === Semantic Caching Methods ===
     
-    async def search_semantic_cache(self, query: str) -> Optional[CacheResult]:
+    async def search_semantic_cache(self, query: str, query_embedding: Optional[List[float]] = None) -> Optional[CacheResult]:
         """
         Search semantic cache with intent-aware matching.
         
@@ -342,27 +350,29 @@ class RedisIntegration:
         preventing incorrect cache hits between different query types.
         """
         try:
-            # Generate embedding
-            loop = asyncio.get_event_loop()
-            embedding = await loop.run_in_executor(
-                None, self.embedding_service.embed, query
-            )
+            # Use provided embedding or generate new one
+            if query_embedding is None:
+                loop = asyncio.get_event_loop()
+                embedding = await loop.run_in_executor(
+                    None, self.embedding_service.embed, query
+                )
+            else:
+                embedding = query_embedding
             
             # Get current query intent
             current_intent = self.intent_classifier.classify_intent(query)
             
-            # Search cache
-            cache_keys = self.redis_client.keys("app_cache:*")
-            print(f"[CACHE] Searching {len(cache_keys)} cached entries")
-            
+            # Search cache directly without retrieving all keys
             vector_query = VectorQuery(
                 vector=embedding,
                 vector_field_name="embedding",
-                num_results=3,  # Check top 3 for intent matching
+                num_results=2,  # Reduced from 3 - only need top matches
                 return_fields=["query", "response", "timestamp"]
             )
             
+            query_start = time.time()
             results = self.cache_index.query(vector_query)
+            print(f"[CACHE] Vector search completed in {time.time() - query_start:.3f}s")
             
             # Find best match with intent compatibility
             for i, result in enumerate(results):
@@ -371,21 +381,19 @@ class RedisIntegration:
                 cached_intent = self.intent_classifier.classify_intent(cached_query)
                 
                 print(f"[CACHE] Candidate {i+1}: Intent={cached_intent}, Similarity={similarity_score:.3f}")
+                print(f"[CACHE] Debug: similarity_score={similarity_score}, threshold={self.config.cache.similarity_threshold}")
                 
-                # Require both similarity and intent match
-                if (similarity_score > self.config.cache.similarity_threshold and 
-                    current_intent == cached_intent):
-                    
-                    print(f"[CACHE] Cache hit! Similarity={similarity_score:.3f}, Intent={current_intent}")
+                # Check for cache hit based on similarity alone
+                if similarity_score > self.config.cache.similarity_threshold:
+                    print(f"[CACHE] Cache hit! Similarity={similarity_score:.3f}, Current intent={current_intent}, Cached intent={cached_intent}")
                     return CacheResult(
                         query=cached_query,
                         response=result.get("response"),
                         timestamp=result.get("timestamp"),
                         similarity_score=similarity_score
                     )
-                
-                elif similarity_score > self.config.cache.similarity_threshold:
-                    print(f"[CACHE] Intent mismatch: {current_intent} vs {cached_intent}")
+                else:
+                    print(f"[CACHE] Similarity {similarity_score:.3f} below threshold {self.config.cache.similarity_threshold}")
             
             print(f"[CACHE] Cache miss - no suitable match found")
             return None
@@ -425,14 +433,17 @@ class RedisIntegration:
     # === Conversation Memory Methods ===
     
     async def search_conversation_memory(self, session_id: str, query: str, 
-                                       max_results: int = 3) -> List[MemoryEntry]:
+                                       max_results: int = 3, query_embedding: Optional[List[float]] = None) -> List[MemoryEntry]:
         """Search conversation memory for relevant context."""
         try:
-            # Generate embedding for user query
-            loop = asyncio.get_event_loop()
-            embedding = await loop.run_in_executor(
-                None, self.embedding_service.embed, query
-            )
+            # Use provided embedding or generate new one
+            if query_embedding is None:
+                loop = asyncio.get_event_loop()
+                embedding = await loop.run_in_executor(
+                    None, self.embedding_service.embed, query
+                )
+            else:
+                embedding = query_embedding
             
             print(f"[MEMORY] Searching session {session_id[:8]}... for: '{query[:50]}...'")
             
@@ -445,7 +456,9 @@ class RedisIntegration:
                 filter_expression=f'@session_id:"{session_id}"'
             )
             
+            query_start = time.time()
             results = self.memory_index.query(vector_query)
+            print(f"[MEMORY] Vector search completed in {time.time() - query_start:.3f}s")
             
             memories = []
             for result in results:
@@ -538,10 +551,20 @@ class RedisIntegration:
             print("[ROUTER] No router available, defaulting to allowed")
             return "allowed", 0.0
         
+        # Quick check if router is still valid (only if not already validated)
+        if not self._router_initialized:
+            if self._router_exists_and_valid():
+                self._router_initialized = True
+            else:
+                print("[ROUTER] Router invalidated, defaulting to allowed")
+                return "allowed", 0.0
+        
         try:
+            route_start = time.time()
             route_match = self.semantic_router(query)
+            route_time = time.time() - route_start
             
-            print(f"[ROUTER] Debug - Query: '{query}', Match: {route_match}")
+            print(f"[ROUTER] Query evaluated in {route_time:.3f}s - Query: '{query[:50]}...', Match: {route_match}")
             if route_match:
                 print(f"[ROUTER] Debug - Match name: {route_match.name}, Distance: {getattr(route_match, 'distance', 'N/A')}")
             
