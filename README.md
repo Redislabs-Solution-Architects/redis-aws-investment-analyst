@@ -116,20 +116,26 @@ MEMORY_TTL = 604800            # Memory TTL (seconds)
 
 ## Test Queries
 
-**Short-Term Memory**
+**Semantic Caching**
 ```  
-1. "My name is yusuf" (stored in session memory)
-2. "What is my name?" (retrieved from session context)
-3. "Focus on 2021 financial data"
-4. "what were the net sales?" (will pull 2021 net sales)
-```
+- What are the biggest risks facing Amazon inc.?
+- What are Amazon's business challenges?
+```  
+
+**Short Term Memory:**
+```  
+- Focus on 2021 financial data
+- What were the net sales?
+```  
 
 **Semantic Caching**
-```
-5. "What were the sales figures??" 
-```
+From the previous question "What were the net sales?"
+```  
+- what were the sales figures?
+```  
 
 **Semantic Routing**
-```
-6. "How do I cook Pasta?" (filtered out)
-```
+```  
+- How do I cook Pasta?
+- Can you tell me how to play  Basketball?
+```  
