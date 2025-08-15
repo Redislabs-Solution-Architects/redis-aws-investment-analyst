@@ -61,8 +61,8 @@ class AppConfig:
         
         self.bedrock = BedrockConfig(
             region=os.getenv("AWS_REGION", "us-west-2"),
-            agent_id_redis="6P7GWFAMPF",  # Redis-enhanced architecture
-            agent_id_opensearch="QULFE3MVXY"  # Standard AWS architecture
+            agent_id_redis=os.getenv("BEDROCK_AGENT_ID_REDIS"),  # Redis-enhanced architecture
+            agent_id_opensearch=os.getenv("BEDROCK_AGENT_ID_OPENSEARCH")  # Standard AWS architecture
         )
         
         self.cache = CacheConfig(
@@ -71,7 +71,7 @@ class AppConfig:
     
     def _validate_required_env_vars(self) -> None:
         """Validate that all required environment variables are set."""
-        required_vars = ["REDIS_HOST", "REDIS_PASSWORD"]
+        required_vars = ["REDIS_HOST", "REDIS_PASSWORD", "BEDROCK_AGENT_ID_REDIS", "BEDROCK_AGENT_ID_OPENSEARCH"]
         missing_vars = [var for var in required_vars if not os.getenv(var)]
         
         if missing_vars:
